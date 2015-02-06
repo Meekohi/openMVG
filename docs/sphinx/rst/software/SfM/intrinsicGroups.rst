@@ -15,7 +15,7 @@ If you have image with no metadata you can specify the known pixel focal length 
 Intrinsic analysis and export:
 -----------------------------------
 
-The process exports in outputDirectory/**lists.txt** file the extracted camera intrinsics, one line per image.
+The process exports in outputDirectory/**imageParams.json** file the extracted camera intrinsics.
 
   .. code-block:: c++
 
@@ -57,20 +57,29 @@ Depending if EXIF data and if the camera model and make is registered in the cam
     - else no focal camera can be computed, only the image size is exported.
 
 
-Example of a lists.txt file where focal is known in advance
+Example of a imageParams.json file
 
-.. code-block:: c++
+  .. code-block:: json
 
-  0000.png;3072;2048;2760;0;1536;0;2760;1024;0;0;1
-  0001.png;3072;2048;2760;0;1536;0;2760;1024;0;0;1
-  0002.png;3072;2048;2760;0;1536;0;2760;1024;0;0;1
-  ...
-
-Example of a lists.txt file where focal is computed from exif data
-
-.. code-block:: c++
-
-  100_7100.JPG;2832;2128;2881.25;EASTMAN KODAK COMPANY;KODAK Z612 ZOOM DIGITAL CAMERA
-  100_7101.JPG;2832;2128;2881.25;EASTMAN KODAK COMPANY;KODAK Z612 ZOOM DIGITAL CAMERA
-  100_7102.JPG;2832;2128;2881.25;EASTMAN KODAK COMPANY;KODAK Z612 ZOOM DIGITAL CAMERA
-  ...
+    [
+      {
+          "filename": "2015-02-05 11.50.17.jpg",
+          "width": 2448,
+          "height": 3264,
+          "focalLength": 2000.0,
+          "camera": {
+              "name": "Apple",
+              "model": "iPhone 5s"
+          }
+      },
+      {
+          "filename": "2015-02-05 11.50.21.jpg",
+          "width": 2448,
+          "height": 3264,
+          "focalLength": 2000.0,
+          "camera": {
+              "name": "Apple",
+              "model": "iPhone 5s"
+          }
+      }
+    ]

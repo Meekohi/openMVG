@@ -80,7 +80,7 @@ ADD_SUBDIRECTORY(easyexif)
 SET(EIGEN_INCLUDE_INSTALL_DIR ${CMAKE_INSTALL_PREFIX}/include/openMVG_third_party/Eigen)
 ADD_SUBDIRECTORY(eigen)
 
-LIST(APPEND directories cmdLine histogram htmlDoc progress stlAddition tinythread vectorGraphics)
+LIST(APPEND directories cmdLine histogram htmlDoc progress stlAddition tinythread vectorGraphics rapidjson/include)
 FOREACH(inDirectory ${directories}) 
 INSTALL(
   DIRECTORY ./${inDirectory}

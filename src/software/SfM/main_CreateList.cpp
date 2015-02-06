@@ -13,6 +13,14 @@
 #include "third_party/cmdLine/cmdLine.h"
 #include "third_party/stlplus3/filesystemSimplified/file_system.hpp"
 
+#include "third_party/rapidjson/include/rapidjson/document.h"
+#include "third_party/rapidjson/include/rapidjson/writer.h"
+#include "third_party/rapidjson/include/rapidjson/stringbuffer.h"
+#include "third_party/rapidjson/include/rapidjson/filestream.h"
+#include "third_party/rapidjson/include/rapidjson/prettywriter.h"
+
+using namespace rapidjson;
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -130,70 +138,78 @@ int main(int argc, char **argv)
   }
 
   std::vector<std::string> vec_image = stlplus::folder_files( sImageDir );
-  // Write the new file
-  std::ofstream listTXT( stlplus::create_filespec( sOutputDir,
-                                                   "lists.txt" ).c_str() );
-  if ( listTXT )
+  
+  // JSON output
+  FileStream jsonOut( fopen(stlplus::create_filespec( sOutputDir, "imageParams.json" ).c_str(),"w") );
+  PrettyWriter<FileStream> jsonWriter(jsonOut);
+
+  // Start an array of images with their paramaters
+  jsonWriter.StartArray();
+
+  std::sort(vec_image.begin(), vec_image.end());
+  for ( std::vector<std::string>::const_iterator iter_image = vec_image.begin();
+    iter_image != vec_image.end();
+    iter_image++ )
   {
-    std::sort(vec_image.begin(), vec_image.end());
-    for ( std::vector<std::string>::const_iterator iter_image = vec_image.begin();
-      iter_image != vec_image.end();
-      iter_image++ )
+    // Read meta data to fill width height and focalPixPermm
+    const std::string sImageFilename = stlplus::create_filespec( sImageDir, *iter_image );
+    
+    // Test if the image format is supported:
+    if (openMVG::GetFormat(sImageFilename.c_str()) == openMVG::Unknown)
+      continue; // image cannot be opened
+
+    size_t width = -1, height = -1;
+    Image<unsigned char> image;
+    if (openMVG::ReadImage( sImageFilename.c_str(), &image))  {
+      width = image.Width();
+      height = image.Height();
+    }
+    else
+      continue; // image cannot be read
+
+    jsonWriter.StartObject();
+    jsonWriter.String("filename");
+    jsonWriter.String( (*iter_image).c_str() );
+    jsonWriter.String("width");
+    jsonWriter.Uint(width);
+    jsonWriter.String("height");
+    jsonWriter.Uint(height);
+
+    if(focalPixPermm != -1)
     {
-      // Read meta data to fill width height and focalPixPermm
-      const std::string sImageFilename = stlplus::create_filespec( sImageDir, *iter_image );
-      
-      // Test if the image format is supported:
-      if (openMVG::GetFormat(sImageFilename.c_str()) == openMVG::Unknown)
-        continue; // image cannot be opened
+      jsonWriter.String("focalLength");
+      jsonWriter.Double(focalPixPermm);
+    }
+    if(sKmatrix.size() > 0)
+    {
+      jsonWriter.String("sKmatrix");
+      jsonWriter.String(sKmatrix.c_str());
+    }
+ 
+    // Read EXIF data
+    std::auto_ptr<Exif_IO> exifReader (new Exif_IO_EasyExif() );
+    exifReader->open( sImageFilename );
 
-      size_t width = -1, height = -1;
-      Image<unsigned char> image;
-      if (openMVG::ReadImage( sImageFilename.c_str(), &image))  {
-        width = image.Width();
-        height = image.Height();
-      }
-      else
-        continue; // image cannot be read
+    if ( exifReader->doesHaveExifInfo() )
+    {
+      const std::string sCamName = exifReader->getBrand();
+      const std::string sCamModel = exifReader->getModel();
+      jsonWriter.String("camera");
+      jsonWriter.StartObject();
+      jsonWriter.String("name");
+      jsonWriter.String(sCamName.c_str());
+      jsonWriter.String("model");
+      jsonWriter.String(sCamModel.c_str());
+      jsonWriter.EndObject();
 
-      std::auto_ptr<Exif_IO> exifReader (new Exif_IO_EasyExif() );
-      exifReader->open( sImageFilename );
-
-      // Consider the case where focal is provided
-
-      std::ostringstream os;
-      //If image do not contains meta data
-      if ( !exifReader->doesHaveExifInfo() || focalPixPermm != -1)
+      if(focalPixPermm == -1)
       {
-        os << *iter_image << ";" << width << ";" << height;
-        if ( focalPixPermm == -1 && sKmatrix.size() == 0)
-          os << std::endl;
-        else
-        {
-          if (sKmatrix.size() > 0) // Known intrinsic matrix
-          {
-            os << ";" << sKmatrix << std::endl;
-          }
-          else
-            os << ";"
-              << focalPixPermm << ";" << 0 << ";" << width/2.0 << ";"
-              << 0 << ";" << focalPixPermm << ";" << height/2.0 << ";"
-              << 0 << ";" << 0 << ";" << 1 << std::endl;
-        }
-      }
-      else // If image contains meta data
-      {
-        const std::string sCamName = exifReader->getBrand();
-        const std::string sCamModel = exifReader->getModel();
-
-        // Handle case where focal length is equal to 0
+        // Warning if the focal length is equal to 0
         if (exifReader->getFocal() == 0.0f)
         {
-          std::cerr << stlplus::basename_part(sImageFilename) << ": Focal length is missing." << std::endl;
-          continue;
+          std::cerr << stlplus::basename_part(sImageFilename) << ": Focal length is missing from EXIF data." << std::endl;
         }
-
-        // Create the image entry in the list file
+        else // Lookup focal length in the camera database
         {
           Datasheet datasheet;
           if ( getInfo( sCamName, sCamModel, vec_database, datasheet ))
@@ -201,21 +217,22 @@ int main(int argc, char **argv)
             // The camera model was found in the database so we can compute it's approximated focal length
             const double ccdw = datasheet._sensorSize;
             const double focal = std::max ( width, height ) * exifReader->getFocal() / ccdw;
-            os << *iter_image << ";" << width << ";" << height << ";" << focal << ";" << sCamName << ";" << sCamModel << std::endl;
+
+            jsonWriter.String("focalLength");
+            jsonWriter.Double(focal);
           }
           else
           {
             std::cout << stlplus::basename_part(sImageFilename) << ": Camera \"" 
               << sCamName << "\" model \"" << sCamModel << "\" doesn't exist in the database" << std::endl
               << "Please consider add your camera model and sensor width in the database." << std::endl;
-            os << *iter_image << ";" << width << ";" << height << ";" << sCamName << ";" << sCamModel << std::endl;
           }
         }
       }
-      std::cout << os.str();
-      listTXT << os.str();
     }
+
+    jsonWriter.EndObject();
   }
-  listTXT.close();
+  jsonWriter.EndArray();
   return EXIT_SUCCESS;
 }
